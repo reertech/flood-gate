@@ -10,15 +10,14 @@ module Lib
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.STM.TVar
-import Control.Exception (onException)
+import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader.Class
 import Control.Monad.STM
 import Data.ByteString (ByteString)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
-import Dhall
-import GHC.Generics
+import Dhall (FromDhall, Generic, Natural)
 import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.ReverseProxy
@@ -29,9 +28,7 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.Timeout
 import Prelude hiding (log)
 
-import Control.Exception (SomeException)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
 
 data Config = Config
   { configPort :: Natural
@@ -39,6 +36,7 @@ data Config = Config
   , configTargetPort :: Natural
   , configIsTargetTls :: Bool
   , configMaxConn :: Natural
+  , configServeTimeoutSecs :: Natural
   } deriving (Generic, Show, Eq)
 
 instance FromDhall Config
@@ -63,10 +61,20 @@ gatewayTimeout :: WaiProxyResponse
 gatewayTimeout =
   WPRResponse $ responseLBS gatewayTimeout504 [] "Rate limit induced time out"
 
-forward :: IO () -> (Request -> ProxyDest -> WaiProxyResponse) -> ByteString -> Int -> Request -> IO WaiProxyResponse
-forward claimToken mkProxyResponse host port rq = do
+forward :: Env -> Request -> IO WaiProxyResponse
+forward env rq = do
+  let claimToken = envClaimToken env
+      logMsg = envLog env
+      cfg = envConfig env
+      host = encodeUtf8 $ configTargetHost cfg
+      port = fromIntegral $ configTargetPort cfg
+      serveTimeout = fromIntegral $ configServeTimeoutSecs cfg
+      mkProxyResponse = if configIsTargetTls cfg
+                          then WPRModifiedRequestSecure
+                          else WPRModifiedRequest
   claimed <- race claimToken
-                  (threadDelay 2000000 >> putStrLn "Request getting delayed due to rate limits" >> threadDelay 28000000)
+                  (threadDelay 100000 >> logMsg "Request getting delayed 100ms+ due to rate limits" >>
+                    threadDelay (serveTimeout * 1000000))
   return $ case claimed of
     Left _ -> mkProxyResponse (fixHeaders host rq) (ProxyDest host port)
     Right _ -> gatewayTimeout
@@ -74,30 +82,18 @@ forward claimToken mkProxyResponse host port rq = do
 buildProxyApp :: (MonadReader Env m, MonadIO m) => m Application
 buildProxyApp = do
   manager <- liftIO $ newManager tlsManagerSettings
-  cfg <- asks envConfig
-  claimToken <- asks envClaimToken
-  let host = encodeUtf8 $ configTargetHost cfg
-      port = configTargetPort cfg
-      requestBuilder = if configIsTargetTls cfg
-                          then WPRModifiedRequestSecure
-                          else WPRModifiedRequest
-  return $ waiProxyTo (forward claimToken requestBuilder host (fromIntegral port))
-                      defaultOnExc
-                      manager
+  env <- ask
+  return $ waiProxyTo (forward env) defaultOnExc manager
 
-{-customOnException :: Maybe Request -> SomeException -> IO ()-}
-{-customOnException rq e = do-}
-  {-putStrLn ""-}
-  {-print rq-}
-  {-TIO.putStrLn $ T.pack $ show e-}
-
-openHandler :: Int -> TVar Int -> SockAddr -> IO Bool
-openHandler maxConn ref _ = do
-  atomically $ do
+openHandler :: (Text -> IO ()) -> Int -> TVar Int -> SockAddr -> IO Bool
+openHandler logMsg maxConn ref _ = do
+  result <- atomically $ do
     connections <- readTVar ref
     if connections < maxConn
        then writeTVar ref (connections + 1) >> return True
        else return False
+  when (not result) $ logMsg "Denying connection due to too many being in flight already"
+  return result
 
 closeHandler :: TVar Int -> SockAddr -> IO ()
 closeHandler ref _ =
@@ -111,10 +107,12 @@ serveRateLimitingProxy = do
   app <- buildProxyApp
   bindPort <- asks (configPort . envConfig)
   maxConn <- asks (configMaxConn . envConfig)
+  timeoutSecs <- asks (fromIntegral . configServeTimeoutSecs . envConfig)
+  logMsg <- asks envLog
   log $ "Starting rate limiting proxy on :" <> (T.pack $ show bindPort) <> "..."
   let waiSettings = setPort (fromIntegral bindPort)
-                  $ setOnOpen (openHandler (fromIntegral maxConn) connCounter)
+                  $ setOnOpen (openHandler logMsg (fromIntegral maxConn) connCounter)
                   $ setOnClose (closeHandler connCounter)
                   $ defaultSettings
-  liftIO $ runSettings waiSettings $ timeoutStatus gatewayTimeout504 60 $ app
+  liftIO $ runSettings waiSettings $ timeoutStatus gatewayTimeout504 (timeoutSecs + 1) $ app
   log $ "Shutting down the proxy gracefully"
