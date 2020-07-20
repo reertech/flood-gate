@@ -3,9 +3,13 @@
 module Main where
 
 import Buckets
+import Conduit as C
 import Control.Concurrent
 import Control.Monad.Reader
 import Data.List
+import Data.Text (Text)
+import Data.Time.Clock (getCurrentTime)
+import Data.Time.Format.ISO8601 (iso8601Show)
 import Dhall (input, auto, FromDhall, Generic)
 import Lib
 import Prelude hiding (log)
@@ -20,10 +24,10 @@ data ServiceConfig =
 
 instance FromDhall ServiceConfig
 
-loadConfig :: T.Text -> IO ServiceConfig
+loadConfig :: Text -> IO ServiceConfig
 loadConfig dhall = input auto dhall
 
-formatBucketStatus :: BucketStatus -> T.Text
+formatBucketStatus :: BucketStatus -> Text
 formatBucketStatus BucketStatus { bucketStatusNow = now, bucketStatusLimitConfigExt = lce } =
   (T.pack $ show $ lceRequestsLimit lce)
   <> " rqs per "
@@ -32,7 +36,7 @@ formatBucketStatus BucketStatus { bucketStatusNow = now, bucketStatusLimitConfig
   <> formatPercent (now * 100 `div` (lceRequestsLimit lce))
   <> " ("
   <> (T.pack $ show now)
-  <> ") avail"
+  <> ") left"
     where formatPercent v = (T.pack $ show v) <> "%"
           formatTimePeriod' _ 0 = ""
           formatTimePeriod' [] secs = error $ show secs <> " secs left when formatting time period"
@@ -46,18 +50,28 @@ formatBucketStatus BucketStatus { bucketStatusNow = now, bucketStatusLimitConfig
           formatTimePeriod = formatTimePeriod' [("d", 60*60*24), ("h", 60*60), ("m", 60), ("s", 1)]
 
 reportBucketStatus :: (MonadReader Env m, MonadIO m) => BucketsInstance -> m ()
-reportBucketStatus bi = forever $ do
-  bs <- liftIO $ currentBucketStatus bi
-  let formattedBucketStatus = T.intercalate ", " $ map formatBucketStatus bs
-  log formattedBucketStatus
-  liftIO $ threadDelay 5000000
+reportBucketStatus bi = runConduit 
+     $ repeatMC (liftIO $ currentBucketStatus bi)
+    .| iterMC (const $ liftIO $ threadDelay 100000)
+    .| slidingWindowC 2
+    .| filterC (\[old, new] -> old /= new)
+    .| mapC last
+    .| mapC (T.intercalate ", " . map formatBucketStatus)
+    .| iterMC log
+    .| iterMC (const $ liftIO $ threadDelay 1000000)
+    .| sinkNull
+
+timestampedLog :: Text -> IO ()
+timestampedLog t = do
+  now <- getCurrentTime
+  TIO.putStrLn $ "[" <> (T.pack $ iso8601Show now) <> "] " <> t
 
 main' :: [String] -> IO ()
 main' [dhall] = do
   svcConfig <- loadConfig $ T.pack dhall
   bi <- summonBuckets $ limits svcConfig
   let env = Env (proxyConfig svcConfig)
-                TIO.putStrLn
+                timestampedLog
                 (claimToken bi)
   let runEnv = flip runReaderT env
   void $ forkIO $ runEnv $ reportBucketStatus bi

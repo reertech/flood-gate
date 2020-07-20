@@ -45,7 +45,7 @@ instance FromDhall Config
 
 data Env = Env
   { envConfig :: Config
-  , envLog :: !(T.Text -> IO ())
+  , envLog :: !(Text -> IO ())
   , envClaimToken :: IO ()
   }
 
