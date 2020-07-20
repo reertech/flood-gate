@@ -1,0 +1,70 @@
+name:                flood-gate
+version:             0.1.0.0
+github:              "githubuser/flood-gate"
+license:             BSD3
+author:              "Ivan Kasatenko"
+maintainer:          "sky.31338@gmail.com"
+copyright:           "2020 Ivan Kasatenko"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Flood gate rate limiting proxy
+
+dependencies:
+- base >= 4.7 && < 5
+- async
+- bytestring
+- conduit
+- dhall
+- http-client
+- http-client-tls
+- http-reverse-proxy
+- http-types
+- mtl
+- network
+- stm
+- text
+- time
+- wai
+- wai-extra
+- warp
+
+library:
+  source-dirs: src
+
+executables:
+  flood-gate-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -O2
+    - -Wall
+    - -Werror
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - flood-gate
+
+tests:
+  flood-gate-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -O2
+    - -Wall
+    - -Werror
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - flood-gate

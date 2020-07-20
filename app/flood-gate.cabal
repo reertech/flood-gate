@@ -1,0 +1,111 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 9e6ad2446ab06a3f9f19c47d363c7a264ad735bf093f949510ef440fc45f97be
+
+name:           flood-gate
+version:        0.1.0.0
+description:    Flood gate rate limiting proxy
+homepage:       https://github.com/githubuser/flood-gate#readme
+bug-reports:    https://github.com/githubuser/flood-gate/issues
+author:         Ivan Kasatenko
+maintainer:     sky.31338@gmail.com
+copyright:      2020 Ivan Kasatenko
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/flood-gate
+
+library
+  exposed-modules:
+      Buckets
+      Lib
+  other-modules:
+      Paths_flood_gate
+  hs-source-dirs:
+      src
+  build-depends:
+      async
+    , base >=4.7 && <5
+    , bytestring
+    , conduit
+    , dhall
+    , http-client
+    , http-client-tls
+    , http-reverse-proxy
+    , http-types
+    , mtl
+    , network
+    , stm
+    , text
+    , time
+    , wai
+    , wai-extra
+    , warp
+  default-language: Haskell2010
+
+executable flood-gate-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_flood_gate
+  hs-source-dirs:
+      app
+  ghc-options: -O2 -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      async
+    , base >=4.7 && <5
+    , bytestring
+    , conduit
+    , dhall
+    , flood-gate
+    , http-client
+    , http-client-tls
+    , http-reverse-proxy
+    , http-types
+    , mtl
+    , network
+    , stm
+    , text
+    , time
+    , wai
+    , wai-extra
+    , warp
+  default-language: Haskell2010
+
+test-suite flood-gate-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_flood_gate
+  hs-source-dirs:
+      test
+  ghc-options: -O2 -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      async
+    , base >=4.7 && <5
+    , bytestring
+    , conduit
+    , dhall
+    , flood-gate
+    , http-client
+    , http-client-tls
+    , http-reverse-proxy
+    , http-types
+    , mtl
+    , network
+    , stm
+    , text
+    , time
+    , wai
+    , wai-extra
+    , warp
+  default-language: Haskell2010

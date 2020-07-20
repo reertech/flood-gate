@@ -1,0 +1,3 @@
+app/dist
+app/.cabal-sandbox
+app/cabal.sandbox.config
