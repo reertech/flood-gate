@@ -14,6 +14,7 @@ import Dhall (input, auto, FromDhall, Generic)
 import Lib
 import Prelude hiding (log)
 import System.Environment (getArgs)
+import System.IO (hFlush, stdout)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 
@@ -65,6 +66,7 @@ timestampedLog :: Text -> IO ()
 timestampedLog t = do
   now <- getCurrentTime
   TIO.putStrLn $ "[" <> (T.pack $ iso8601Show now) <> "] " <> t
+  hFlush stdout
 
 main' :: [String] -> IO ()
 main' [dhall] = do
